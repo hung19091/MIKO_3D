@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sakura Miko 3D Street Explorer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js and MMD support -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/TGALoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mmd-parser@1.0.4/build/mmdparser.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MMDLoader.js"></script>
+    <link rel="stylesheet" href="./css/style.css">
+</head>
+<body class="bg-pink-50 overflow-hidden relative">
+
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container" class="w-full h-full absolute inset-0"></div>
+
+    <!-- UI Overlay Top Left: Title & Model Status -->
+    <div id="title-panel" class="absolute top-4 left-4 z-10 flex flex-col gap-2">
+        <div class="glass-panel p-4 rounded-2xl shadow-lg border-pink-200 max-w-xs">
+            <h1 class="text-xl font-bold text-pink-600 flex items-center gap-2">
+                🌸 Miko Street 3D
+            </h1>
+            <p class="text-xs text-slate-600 mt-1">
+                使用 WASD／方向鍵沿街移動，拖曳滑鼠旋轉視角。
+            </p>
+            <p id="model-status" class="text-xs text-slate-500 mt-2" role="status" aria-live="polite">
+                正在載入官方 MMD 配布角色…
+            </p>
+            <p class="text-[10px] text-slate-500 mt-1">© 2019 cover corp.／非官方粉絲作品</p>
+        </div>
+    </div>
+
+    <!-- UI Overlay Top Right: Street Controls -->
+    <div id="top-controls" class="absolute top-4 right-4 z-10 flex flex-col gap-2">
+        <div class="glass-panel p-3 rounded-2xl shadow-lg flex items-center gap-2">
+            <button id="btn-light" class="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-semibold px-3 py-2 rounded-xl transition flex items-center gap-1">
+                💡 切換燈光
+            </button>
+            <button id="btn-camera-reset" class="bg-pink-100 hover:bg-pink-200 text-pink-700 text-xs font-semibold px-3 py-2 rounded-xl transition">
+                🎥 重置鏡頭
+            </button>
+        </div>
+    </div>
+
+    <!-- Actions Bar (Bottom Center) -->
+    <div id="actions-bar" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10">
+        <div class="glass-panel p-2 px-4 rounded-full shadow-xl flex items-center gap-3 border-pink-100">
+            <button id="btn-wave" class="bg-pink-500 hover:bg-pink-600 active:scale-95 text-white font-bold text-sm px-4 py-2 rounded-full transition shadow-md flex items-center gap-1">
+                👋 打招呼
+            </button>
+            <button id="btn-jump" class="bg-pink-500 hover:bg-pink-600 active:scale-95 text-white font-bold text-sm px-4 py-2 rounded-full transition shadow-md flex items-center gap-1">
+                🦘 原地跳躍
+            </button>
+            <button id="btn-spin" class="bg-pink-500 hover:bg-pink-600 active:scale-95 text-white font-bold text-sm px-4 py-2 rounded-full transition shadow-md flex items-center gap-1">
+                ✨ 轉圈圈
+            </button>
+        </div>
+    </div>
+
+    <!-- Controls Guide Overlay (Bottom Left) -->
+    <div class="absolute bottom-6 left-6 z-10 hidden md:block">
+        <div class="glass-panel p-3 rounded-2xl shadow-lg text-slate-600 text-xs flex flex-col gap-1.5">
+            <div class="flex items-center gap-2">
+                <span class="key-cap px-2 py-0.5 rounded font-mono font-bold text-slate-700">W A S D</span>
+                <span>/ 箭頭鍵 移動</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="key-cap px-2 py-0.5 rounded font-mono font-bold text-slate-700">Shift</span>
+                <span>衝刺跑步</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="key-cap px-2 py-0.5 rounded font-mono font-bold text-slate-700">Mouse Drag</span>
+                <span>旋轉鏡頭</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- On-Screen Virtual Joystick for Mobile -->
+    <div id="touch-joystick-zone" class="absolute bottom-6 left-6 z-20 w-32 h-32 md:hidden">
+        <div id="joystick-base" class="w-full h-full bg-white/40 border border-white/60 rounded-full relative backdrop-blur-sm shadow-inner flex items-center justify-center">
+            <div id="joystick-stick" class="w-12 h-12 bg-pink-500/80 rounded-full shadow-lg transform transition-transform"></div>
+        </div>
+    </div>
+
+    <script src="./js/main.js"></script>
+</body>
+</html>
