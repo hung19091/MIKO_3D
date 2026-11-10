@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sakura Miko 3D Room Explorer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            user-select: none;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        .key-cap {
+            background: linear-gradient(180deg, #ffffff 0%, #e2e8f0 100%);
+            box-shadow: 0 3px 0 #cbd5e1;
+        }
+    </style>
+</head>
+<body class="bg-pink-50 overflow-hidden relative">
+
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container" class="w-full h-full absolute inset-0"></div>
+
+    <!-- UI Overlay Top Left: Title & Model Loader Prompt -->
+    <div class="absolute top-4 left-4 z-10 flex flex-col gap-2">
+        <div class="glass-panel p-4 rounded-2xl shadow-lg border-pink-200 max-w-xs">
+            <h1 class="text-xl font-bold text-pink-600 flex items-center gap-2">
+                🌸 Miko Room 3D
+            </h1>
+            <p class="text-xs text-slate-600 mt-1">
+                使用鍵盤 WASD 移動，滑動滑鼠旋轉視角。
+            </p>
+        </div>
+    </div>
+
+    <!-- UI Overlay Top Right: Room Controls -->
+    <div class="absolute top-4 right-4 z-10 flex flex-col gap-2">
+        <div class="glass-panel p-3 rounded-2xl shadow-lg flex items-center gap-2">
+            <button id="btn-light" class="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-semibold px-3 py-2 rounded-xl transition flex items-center gap-1">
+                💡 切換燈光
+            </button>
+            <button id="btn-camera-reset" class="bg-pink-100 hover:bg-pink-200 text-pink-700 text-xs font-semibold px-3 py-2 rounded-xl transition">
+                🎥 重置鏡頭
+            </button>
+        </div>
+    </div>
+
+    <!-- Actions Bar (Bottom Center) -->
+    <div class="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10">
+        <div class="glass-panel p-2 px-4 rounded-full shadow-xl flex items-center gap-3 border-pink-100">
+            <button id="btn-wave" class="bg-pink-500 hover:bg-pink-600 active:scale-95 text-white font-bold text-sm px-4 py-2 rounded-full transition shadow-md flex items-center gap-1">
+                👋 打招呼
+            </button>
+            <button id="btn-jump" class="bg-pink-500 hover:bg-pink-600 active:scale-95 text-white font-bold text-sm px-4 py-2 rounded-full transition shadow-md flex items-center gap-1">
+                🦘 原地跳躍
+            </button>
+            <button id="btn-spin" class="bg-pink-500 hover:bg-pink-600 active:scale-95 text-white font-bold text-sm px-4 py-2 rounded-full transition shadow-md flex items-center gap-1">
+                ✨ 轉圈圈
+            </button>
+        </div>
+    </div>
+
+    <!-- Controls Guide Overlay (Bottom Left) -->
+    <div class="absolute bottom-6 left-6 z-10 hidden md:block">
+        <div class="glass-panel p-3 rounded-2xl shadow-lg text-slate-600 text-xs flex flex-col gap-1.5">
+            <div class="flex items-center gap-2">
+                <span class="key-cap px-2 py-0.5 rounded font-mono font-bold text-slate-700">W A S D</span>
+                <span>/ 箭頭鍵 移動</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="key-cap px-2 py-0.5 rounded font-mono font-bold text-slate-700">Shift</span>
+                <span>衝刺跑步</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="key-cap px-2 py-0.5 rounded font-mono font-bold text-slate-700">Mouse Drag</span>
+                <span>旋轉鏡頭</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- On-Screen Virtual Joystick for Mobile -->
+    <div id="touch-joystick-zone" class="absolute bottom-6 left-6 z-20 w-32 h-32 md:hidden">
+        <div id="joystick-base" class="w-full h-full bg-white/40 border border-white/60 rounded-full relative backdrop-blur-sm shadow-inner flex items-center justify-center">
+            <div id="joystick-stick" class="w-12 h-12 bg-pink-500/80 rounded-full shadow-lg transform transition-transform"></div>
+        </div>
+    </div>
+
+    <!-- Main Logic Script -->
+    <script>
+        // --- 1. SCENE & RENDERER SETUP ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xfce7f3); // Soft pastel pink background
+        scene.fog = new THREE.FogExp2(0xfce7f3, 0.035);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 5, 9);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        container.appendChild(renderer.domElement);
+
+        // --- 2. CONTROLS ---
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2 - 0.05; // Prevent camera from clipping through floor
+        controls.minDistance = 3;
+        controls.maxDistance = 14;
+
+        // --- 3. LIGHTING ---
+        const ambientLight = new THREE.AmbientLight(0xfff1f2, 0.7); // Warm ambient light
+        scene.add(ambientLight);
+
+        const mainLight = new THREE.DirectionalLight(0xffedd5, 1.2);
+        mainLight.position.set(6, 12, 6);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 2048;
+        mainLight.shadow.mapSize.height = 2048;
+        mainLight.shadow.camera.near = 0.5;
+        mainLight.shadow.camera.far = 25;
+        mainLight.shadow.camera.left = -8;
+        mainLight.shadow.camera.right = 8;
+        mainLight.shadow.camera.top = 8;
+        mainLight.shadow.camera.bottom = -8;
+        mainLight.shadow.bias = -0.0005;
+        scene.add(mainLight);
+
+        // Soft Accent Lamp Light inside the room
+        const deskLamp = new THREE.PointLight(0xffd166, 0.8, 6);
+        deskLamp.position.set(-3.2, 2.5, -3.2);
+        scene.add(deskLamp);
+
+        // Toggle Lights Button Logic
+        let lightsOn = true;
+        document.getElementById('btn-light').addEventListener('click', () => {
+            lightsOn = !lightsOn;
+            ambientLight.intensity = lightsOn ? 0.7 : 0.2;
+            mainLight.intensity = lightsOn ? 1.2 : 0.3;
+            deskLamp.intensity = lightsOn ? 0.8 : 1.5;
+            scene.background.setHex(lightsOn ? 0xfce7f3 : 0x1e1b4b);
+            scene.fog.color.setHex(lightsOn ? 0xfce7f3 : 0x1e1b4b);
+        });
+
+        document.getElementById('btn-camera-reset').addEventListener('click', () => {
+            if (player) {
+                camera.position.set(player.position.x, player.position.y + 4, player.position.z + 7);
+                controls.target.copy(player.position).add(new THREE.Vector3(0, 1, 0));
+            }
+        });
+
+        // --- 4. ROOM CREATION (BUILDING THE COZY ROOM) ---
+        const ROOM_SIZE = 10;
+        const WALL_HEIGHT = 4.5;
+        const roomGroup = new THREE.Group();
+
+        // Floor (Wood Planks Effect)
+        const floorGeo = new THREE.PlaneGeometry(ROOM_SIZE, ROOM_SIZE);
+        const floorMat = new THREE.MeshStandardMaterial({ 
+            color: 0xe2e8f0, 
+            roughness: 0.4,
+            metalness: 0.1 
+        });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        roomGroup.add(floor);
+
+        // Cute Carpet
+        const rugGeo = new THREE.CircleGeometry(2.5, 32);
+        const rugMat = new THREE.MeshStandardMaterial({ color: 0xfbcfe8, roughness: 0.9 });
+        const rug = new THREE.Mesh(rugGeo, rugMat);
+        rug.rotation.x = -Math.PI / 2;
+        rug.position.set(0, 0.01, 0);
+        rug.receiveShadow = true;
+        roomGroup.add(rug);
+
+        // Walls
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0xfff1f2, roughness: 0.7 });
+        
+        // Back Wall
+        const backWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM_SIZE, WALL_HEIGHT, 0.2), wallMat);
+        backWall.position.set(0, WALL_HEIGHT / 2, -ROOM_SIZE / 2);
+        backWall.receiveShadow = true;
+        roomGroup.add(backWall);
+
+        // Left Wall
+        const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.2, WALL_HEIGHT, ROOM_SIZE), wallMat);
+        leftWall.position.set(-ROOM_SIZE / 2, WALL_HEIGHT / 2, 0);
+        leftWall.receiveShadow = true;
+        roomGroup.add(leftWall);
+
+        // Wall Trim Baseboards
+        const trimMat = new THREE.MeshStandardMaterial({ color: 0xf472b6 });
+        const trimBack = new THREE.Mesh(new THREE.BoxGeometry(ROOM_SIZE, 0.2, 0.25), trimMat);
+        trimBack.position.set(0, 0.1, -ROOM_SIZE / 2 + 0.05);
+        roomGroup.add(trimBack);
+
+        // --- ROOM FURNITURE ---
+        // Helper to create shadow-casting meshes easily
+        function createBox(w, h, d, color, x, y, z, parent = roomGroup) {
+            const geo = new THREE.BoxGeometry(w, h, d);
+            const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y + h/2, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            parent.add(mesh);
+            return mesh;
+        }
+
+        // Bed Structure
+        createBox(2.6, 0.4, 4, 0xf1f5f9, 3.2, 0, -2.5); // Frame
+        createBox(2.4, 0.3, 3.8, 0xf472b6, 3.2, 0.4, -2.5); // Mattress (Pink Bedding)
+        createBox(2.2, 0.15, 1.2, 0xffffff, 3.2, 0.7, -3.7); // Pillow
+        createBox(0.1, 1.4, 4, 0xe2e8f0, 4.5, 0, -2.5); // Headboard
+
+        // Study Desk & Chair
+        createBox(3, 0.1, 1.5, 0xfde047, -3.2, 1.4, -3.8); // Desk Top
+        createBox(0.1, 1.4, 0.1, 0x475569, -4.5, 0, -4.4); // Desk Legs
+        createBox(0.1, 1.4, 0.1, 0x475569, -1.9, 0, -4.4);
+        createBox(0.1, 1.4, 0.1, 0x475569, -4.5, 0, -3.2);
+        createBox(0.1, 1.4, 0.1, 0x475569, -1.9, 0, -3.2);
+
+        // Laptop on Desk
+        createBox(0.6, 0.03, 0.4, 0x94a3b8, -3.2, 1.45, -3.8);
+        const laptopScreen = createBox(0.6, 0.4, 0.03, 0x334155, -3.2, 1.65, -4.0);
+        laptopScreen.rotation.x = -0.2;
+
+        // Shelf / Bookshelf
+        createBox(1.6, 3.0, 0.8, 0xfbcfe8, -3.8, 0, 1.5);
+        createBox(1.5, 0.05, 0.7, 0xffffff, -3.8, 1.0, 1.5);
+        createBox(1.5, 0.05, 0.7, 0xffffff, -3.8, 2.0, 1.5);
+
+        // Wall Poster (Sakura Miko Icon / Decorative Frame)
+        const frameGeo = new THREE.BoxGeometry(1.6, 2.2, 0.04);
+        const frameMat = new THREE.MeshStandardMaterial({ color: 0xf472b6 });
+        const frame = new THREE.Mesh(frameGeo, frameMat);
+        frame.position.set(0, 2.8, -4.88);
+        roomGroup.add(frame);
+
+        const posterGeo = new THREE.PlaneGeometry(1.4, 2.0);
+        const posterMat = new THREE.MeshBasicMaterial({ color: 0xffe4e6 });
+        const poster = new THREE.Mesh(posterGeo, posterMat);
+        poster.position.set(0, 2.8, -4.85);
+        roomGroup.add(poster);
+
+        scene.add(roomGroup);
+
+        // --- 5. PROCEDURAL MIKO AVATAR CREATION ---
+        // Generates a cute low-poly Sakura Miko stylized character
+        function createMikoCharacter() {
+            const avatar = new THREE.Group();
+
+            // Materials
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xffdfd3, roughness: 0.5 });
+            const hairMat = new THREE.MeshStandardMaterial({ color: 0xff85a1, roughness: 0.4 }); // Sakura Pink Hair
+            const mikoRedMat = new THREE.MeshStandardMaterial({ color: 0xe63946, roughness: 0.5 }); // Shrine Maiden Red
+            const mikoWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x2b2d42 });
+
+            // Root / Hips
+            const hips = new THREE.Group();
+            hips.position.y = 0.85;
+            avatar.add(hips);
+
+            // Torso (Miko Kimono Top)
+            const torsoGeo = new THREE.CylinderGeometry(0.2, 0.25, 0.55, 12);
+            const torso = new THREE.Mesh(torsoGeo, mikoWhiteMat);
+            torso.castShadow = true;
+            hips.add(torso);
+
+            // Red Obi (Belt)
+            const obiGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.15, 12);
+            const obi = new THREE.Mesh(obiGeo, mikoRedMat);
+            obi.position.y = -0.1;
+            hips.add(obi);
+
+            // Hakama Skirt
+            const skirtGeo = new THREE.ConeGeometry(0.45, 0.5, 12);
+            const skirt = new THREE.Mesh(skirtGeo, mikoRedMat);
+            skirt.position.y = -0.3;
+            skirt.castShadow = true;
+            hips.add(skirt);
+
+            // Head & Hair Group
+            const headGroup = new THREE.Group();
+            headGroup.position.y = 0.45;
+            hips.add(headGroup);
+
+            // Head Sphere
+            const headGeo = new THREE.SphereGeometry(0.28, 16, 16);
+            const head = new THREE.Mesh(headGeo, skinMat);
+            head.castShadow = true;
+            headGroup.add(head);
+
+            // Eyes
+            const eyeGeo = new THREE.BoxGeometry(0.05, 0.08, 0.02);
+            const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+            leftEye.position.set(-0.09, 0.02, 0.25);
+            const rightEye = leftEye.clone();
+            rightEye.position.x = 0.09;
+            headGroup.add(leftEye);
+            headGroup.add(rightEye);
+
+            // Pink Hair Base
+            const hairGeo = new THREE.SphereGeometry(0.31, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.6);
+            const hairTop = new THREE.Mesh(hairGeo, hairMat);
+            hairTop.rotation.x = -0.2;
+            headGroup.add(hairTop);
+
+            // Twin Tails (Sakura Miko's Signature hairstyle)
+            const tailGeo = new THREE.ConeGeometry(0.12, 0.55, 8);
+            
+            const leftTail = new THREE.Mesh(tailGeo, hairMat);
+            leftTail.position.set(-0.28, 0.05, -0.1);
+            leftTail.rotation.z = 0.6;
+            leftTail.rotation.x = -0.2;
+            headGroup.add(leftTail);
+
+            const rightTail = new THREE.Mesh(tailGeo, hairMat);
+            rightTail.position.set(0.28, 0.05, -0.1);
+            rightTail.rotation.z = -0.6;
+            rightTail.rotation.x = -0.2;
+            headGroup.add(rightTail);
+
+            // Hair Bell / Ribbon Accent
+            const ribbonGeo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
+            const ribbonMat = new THREE.MeshStandardMaterial({ color: 0xffb703 }); // Gold Bell
+            const bell = new THREE.Mesh(ribbonGeo, ribbonMat);
+            bell.position.set(-0.24, 0.22, 0.15);
+            headGroup.add(bell);
+
+            // Arms
+            const armGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.45, 8);
+            
+            // Left Arm Group
+            const leftArmGroup = new THREE.Group();
+            leftArmGroup.position.set(-0.3, 0.2, 0);
+            const leftArm = new THREE.Mesh(armGeo, mikoWhiteMat);
+            leftArm.position.y = -0.18;
+            leftArm.castShadow = true;
+            leftArmGroup.add(leftArm);
+            hips.add(leftArmGroup);
+
+            // Right Arm Group
+            const rightArmGroup = new THREE.Group();
+            rightArmGroup.position.set(0.3, 0.2, 0);
+            const rightArm = new THREE.Mesh(armGeo, mikoWhiteMat);
+            rightArm.position.y = -0.18;
+            rightArm.castShadow = true;
+            rightArmGroup.add(rightArm);
+            hips.add(rightArmGroup);
+
+            // Legs
+            const legGeo = new THREE.CylinderGeometry(0.06, 0.05, 0.45, 8);
+            
+            const leftLegGroup = new THREE.Group();
+            leftLegGroup.position.set(-0.12, -0.4, 0);
+            const leftLeg = new THREE.Mesh(legGeo, skinMat);
+            leftLeg.position.y = -0.15;
+            leftLeg.castShadow = true;
+            leftLegGroup.add(leftLeg);
+            hips.add(leftLegGroup);
+
+            const rightLegGroup = new THREE.Group();
+            rightLegGroup.position.set(0.12, -0.4, 0);
+            const rightLeg = new THREE.Mesh(legGeo, skinMat);
+            rightLeg.position.y = -0.15;
+            rightLeg.castShadow = true;
+            rightLegGroup.add(rightLeg);
+            hips.add(rightLegGroup);
+
+            // Attach limb references for procedural animations
+            avatar.userData = {
+                hips: hips,
+                head: headGroup,
+                leftArm: leftArmGroup,
+                rightArm: rightArmGroup,
+                leftLeg: leftLegGroup,
+                rightLeg: rightLegGroup,
+                leftTail: leftTail,
+                rightTail: rightTail
+            };
+
+            return avatar;
+        }
+
+        const player = createMikoCharacter();
+        player.position.set(0, 0, 0);
+        scene.add(player);
+
+        // --- 6. PLAYER CONTROLLER & INPUT HANDLING ---
+        const keys = { w: false, a: false, s: false, d: false, shift: false };
+        let joystickVector = { x: 0, y: 0 };
+
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 'w' || key === 'arrowup') keys.w = true;
+            if (key === 'a' || key === 'arrowleft') keys.a = true;
+            if (key === 's' || key === 'arrowdown') keys.s = true;
+            if (key === 'd' || key === 'arrowright') keys.d = true;
+            if (e.key === 'Shift') keys.shift = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 'w' || key === 'arrowup') keys.w = false;
+            if (key === 'a' || key === 'arrowleft') keys.a = false;
+            if (key === 's' || key === 'arrowdown') keys.s = false;
+            if (key === 'd' || key === 'arrowright') keys.d = false;
+            if (e.key === 'Shift') keys.shift = false;
+        });
+
+        // Virtual Touch Joystick Implementation
+        const joystickZone = document.getElementById('touch-joystick-zone');
+        const joystickStick = document.getElementById('joystick-stick');
+        let joystickActive = false;
+        let touchStartPos = { x: 0, y: 0 };
+
+        joystickZone.addEventListener('touchstart', (e) => {
+            joystickActive = true;
+            const touch = e.touches[0];
+            touchStartPos = { x: touch.clientX, y: touch.clientY };
+        });
+
+        window.addEventListener('touchmove', (e) => {
+            if (!joystickActive) return;
+            const touch = e.touches[0];
+            const dx = touch.clientX - touchStartPos.x;
+            const dy = touch.clientY - touchStartPos.y;
+            const dist = Math.min(Math.hypot(dx, dy), 40);
+            const angle = Math.atan2(dy, dx);
+            
+            const moveX = Math.cos(angle) * dist;
+            const moveY = Math.sin(angle) * dist;
+            
+            joystickStick.style.transform = `translate(${moveX}px, ${moveY}px)`;
+            joystickVector.x = moveX / 40;
+            joystickVector.y = moveY / 40;
+        });
+
+        const resetJoystick = () => {
+            joystickActive = false;
+            joystickStick.style.transform = `translate(0px, 0px)`;
+            joystickVector = { x: 0, y: 0 };
+        };
+
+        window.addEventListener('touchend', resetJoystick);
+        window.addEventListener('touchcancel', resetJoystick);
+
+        // --- 7. ACTION / ANIMATION STATES ---
+        let currentGesture = null;
+        let gestureTimer = 0;
+
+        document.getElementById('btn-wave').addEventListener('click', () => {
+            currentGesture = 'wave';
+            gestureTimer = 0;
+        });
+        document.getElementById('btn-jump').addEventListener('click', () => {
+            currentGesture = 'jump';
+            gestureTimer = 0;
+        });
+        document.getElementById('btn-spin').addEventListener('click', () => {
+            currentGesture = 'spin';
+            gestureTimer = 0;
+        });
+
+        // --- 8. MAIN ANIMATION LOOP & PHYSICS ---
+        const clock = new THREE.Clock();
+        let walkCycle = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            // Calculate movement vector based on camera direction
+            let inputX = 0;
+            let inputZ = 0;
+
+            if (keys.w) inputZ -= 1;
+            if (keys.s) inputZ += 1;
+            if (keys.a) inputX -= 1;
+            if (keys.d) inputX += 1;
+
+            if (joystickActive) {
+                inputX = joystickVector.x;
+                inputZ = joystickVector.y;
+            }
+
+            const isMoving = Math.abs(inputX) > 0.1 || Math.abs(inputZ) > 0.1;
+            const speed = keys.shift ? 4.5 : 2.5;
+
+            if (isMoving) {
+                // Reset gesture if player starts walking
+                currentGesture = null;
+
+                // Get camera forward/right directions
+                const cameraForward = new THREE.Vector3();
+                camera.getWorldDirection(cameraForward);
+                cameraForward.y = 0;
+                cameraForward.normalize();
+
+                const cameraRight = new THREE.Vector3();
+                cameraRight.crossVectors(cameraForward, new THREE.Vector3(0, 1, 0)).negate();
+
+                // Direction vector
+                const moveDirection = new THREE.Vector3()
+                    .addScaledVector(cameraRight, inputX)
+                    .addScaledVector(cameraForward, inputZ)
+                    .normalize();
+
+                // Rotate player towards movement direction smoothly
+                const targetAngle = Math.atan2(moveDirection.x, moveDirection.z);
+                let diff = targetAngle - player.rotation.y;
+                // Normalize angle diff
+                diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+                player.rotation.y += diff * 0.15;
+
+                // Calculate next position
+                const nextPos = player.position.clone().addScaledVector(moveDirection, speed * delta);
+
+                // --- BOUNDARY COLLISION DETECTION ---
+                // Room walls boundary box (Keep inside -4.2 to 4.2 range)
+                const BOUND = 4.2;
+                nextPos.x = Math.max(-BOUND, Math.min(BOUND, nextPos.x));
+                nextPos.z = Math.max(-BOUND, Math.min(BOUND, nextPos.z));
+
+                // Furniture Collision Boxes Simple AABB
+                // Desk Area Collision
+                if (nextPos.x < -1.8 && nextPos.z < -2.8) {
+                    nextPos.x = player.position.x;
+                    nextPos.z = player.position.z;
+                }
+                // Bed Area Collision
+                if (nextPos.x > 1.8 && nextPos.z < -0.5) {
+                    nextPos.x = player.position.x;
+                    nextPos.z = player.position.z;
+                }
+
+                // Update position & lock target for camera
+                player.position.copy(nextPos);
+                controls.target.copy(player.position).add(new THREE.Vector3(0, 1, 0));
+
+                // Leg/Arm Swing Animation
+                walkCycle += delta * speed * 3.5;
+                const swing = Math.sin(walkCycle) * 0.6;
+
+                player.userData.leftArm.rotation.x = swing;
+                player.userData.rightArm.rotation.x = -swing;
+                player.userData.leftLeg.rotation.x = -swing;
+                player.userData.rightLeg.rotation.x = swing;
+
+                // Subtle body bobbing
+                player.userData.hips.position.y = 0.85 + Math.abs(Math.sin(walkCycle * 2)) * 0.06;
+                player.userData.leftTail.rotation.z = 0.6 + Math.sin(walkCycle * 2) * 0.15;
+                player.userData.rightTail.rotation.z = -0.6 - Math.sin(walkCycle * 2) * 0.15;
+
+            } else {
+                // IDLE BREATHING ANIMATION
+                walkCycle = 0;
+                player.userData.leftArm.rotation.x *= 0.8;
+                player.userData.rightArm.rotation.x *= 0.8;
+                player.userData.leftLeg.rotation.x *= 0.8;
+                player.userData.rightLeg.rotation.x *= 0.8;
+
+                player.userData.hips.position.y = 0.85 + Math.sin(time * 2.5) * 0.02;
+                player.userData.head.rotation.y = Math.sin(time * 1.2) * 0.05;
+                player.userData.leftTail.rotation.z = 0.6 + Math.sin(time * 2.5) * 0.05;
+                player.userData.rightTail.rotation.z = -0.6 - Math.sin(time * 2.5) * 0.05;
+
+                // --- GESTURE ANIMATIONS ---
+                if (currentGesture === 'wave') {
+                    gestureTimer += delta;
+                    player.userData.rightArm.rotation.x = -Math.PI + 0.3;
+                    player.userData.rightArm.rotation.z = Math.sin(gestureTimer * 10) * 0.3;
+                    if (gestureTimer > 2.5) currentGesture = null;
+                } else if (currentGesture === 'jump') {
+                    gestureTimer += delta;
+                    player.userData.hips.position.y = 0.85 + Math.abs(Math.sin(gestureTimer * 6)) * 0.6;
+                    if (gestureTimer > 1.5) currentGesture = null;
+                } else if (currentGesture === 'spin') {
+                    gestureTimer += delta;
+                    player.rotation.y += delta * 10;
+                    if (gestureTimer > 1.2) currentGesture = null;
+                }
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // --- 9. WINDOW RESIZE HANDLING ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start render loop after load
+        window.onload = () => {
+            animate();
+        };
+    </script>
+</body>
+</html>
